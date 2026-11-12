@@ -1,0 +1,233 @@
+// TheraConnect - Prisma Database Schema
+// Clinical Mental Healthcare & Appointment Management System
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  SUPER_ADMIN
+  CLINICAL_DIRECTOR
+  THERAPIST
+  CASE_MANAGER
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  RESCHEDULED
+  CANCELLED
+  NO_SHOW
+}
+
+enum Modality {
+  ONLINE_VIDEO
+  IN_CLINIC
+  AUDIO_CONSULT
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum IntakeRiskLevel {
+  LOW
+  MODERATE
+  ELEVATED
+  CRISIS_TRIGGERED
+}
+
+model AdminUser {
+  id           String      @id @default(uuid())
+  email        String      @unique
+  passwordHash String
+  fullName     String
+  role         Role        @default(THERAPIST)
+  designation  String      @default("Licensed Clinical Psychologist")
+  licenseNo    String?     @default("RCI / PSY-2024-8841")
+  avatarUrl    String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  blogPosts    BlogPost[]
+  sessions     Appointment[]
+}
+
+model Service {
+  id               String        @id @default(uuid())
+  slug             String        @unique
+  title            String
+  shortTagline     String
+  description      String        @db.Text
+  clinicalFocus    String[]      // e.g., ["CBT", "ACT", "Emotion-Focused"]
+  durationMinutes  Int           @default(50)
+  priceAmount      Int           @default(2500) // in INR or target currency
+  currency         String        @default("INR")
+  isFeatured       Boolean       @default(false)
+  appointments     Appointment[]
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+}
+
+model Client {
+  id              String         @id @default(uuid())
+  fullName        String
+  email           String         @unique
+  phoneNumber     String
+  dateOfBirth     DateTime?
+  emergencyContactName String?
+  emergencyContactPhone String?
+  notes           String?        @db.Text
+  appointments    Appointment[]
+  intakeForms     IntakeForm[]
+  payments        Payment[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([email])
+}
+
+model IntakeForm {
+  id                      String          @id @default(uuid())
+  clientId                String
+  client                  Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  appointmentId           String?         @unique
+  appointment             Appointment?    @relation(fields: [appointmentId], references: [id])
+  presentingConcerns      String          @db.Text
+  previousTherapyHistory  String          @db.Text
+  currentMedications      String?         @db.Text
+  symptomSeverity         Int             @default(3) // 1-5 scale
+  sleepAndEnergyRating    String?
+  safetyScreeningResponse Boolean         @default(false) // crisis flag
+  riskLevel               IntakeRiskLevel @default(LOW)
+  consentSignedAt         DateTime        @default(now())
+  consentSignatureName    String
+  confidentialityAccepted Boolean         @default(true)
+  cancellationAgreed      Boolean         @default(true)
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+
+  @@index([clientId])
+}
+
+model Appointment {
+  id              String            @id @default(uuid())
+  referenceCode   String            @unique // e.g. TC-2026-8941
+  clientId        String
+  client          Client            @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  serviceId       String
+  service         Service           @relation(fields: [serviceId], references: [id])
+  therapistId     String?
+  therapist       AdminUser?        @relation(fields: [therapistId], references: [id])
+  status          AppointmentStatus @default(CONFIRMED)
+  modality        Modality          @default(ONLINE_VIDEO)
+  scheduledDate   DateTime
+  timeSlot        String            // e.g. "10:00 AM - 10:50 AM"
+  videoMeetingUrl String?
+  clinicRoom      String?           @default("Consultation Room A, Level 2")
+  clientNotes     String?           @db.Text
+  clinicalNotes   String?           @db.Text
+  intakeForm      IntakeForm?
+  payment         Payment?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([scheduledDate])
+  @@index([status])
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  appointmentId     String        @unique
+  appointment       Appointment   @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  clientId          String
+  client            Client        @relation(fields: [clientId], references: [id])
+  amount            Int           // In currency subunit (e.g. 250000 = 2500.00)
+  currency          String        @default("INR")
+  status            PaymentStatus @default(PENDING)
+  razorpayOrderId   String?       @unique
+  razorpayPaymentId String?       @unique
+  razorpaySignature String?
+  paymentMethod     String?       // UPI, Card, NetBanking
+  receiptUrl        String?
+  paidAt            DateTime?
+  refundedAt        DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([razorpayOrderId])
+  @@index([status])
+}
+
+model BlogPost {
+  id              String      @id @default(uuid())
+  slug            String      @unique
+  title           String
+  excerpt         String      @db.Text
+  content         String      @db.Text
+  category        String      // e.g., "Cognitive Health", "Anxiety", "Mindfulness"
+  readTime        String      @default("5 min read")
+  authorId        String
+  author          AdminUser   @relation(fields: [authorId], references: [id])
+  imageUrl        String?
+  isPublished     Boolean     @default(true)
+  publishedAt     DateTime    @default(now())
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([slug])
+  @@index([category])
+}
+
+model Testimonial {
+  id           String   @id @default(uuid())
+  clientInitials String // e.g. "A. M." to protect client privacy
+  serviceName  String   // e.g. "Individual Psychotherapy"
+  duration     String   // e.g. "6 Months of Care"
+  content      String   @db.Text
+  isDemo       Boolean  @default(true) // Labeled demo/simulated as per ethical healthcare guidelines
+  isApproved   Boolean  @default(true)
+  rating       Int      @default(5)
+  createdAt    DateTime @default(now())
+}
+
+model Resource {
+  id           String   @id @default(uuid())
+  title        String
+  description  String   @db.Text
+  category     String   // e.g., "Worksheet", "Clinical Guide", "Self-Assessment"
+  fileFormat   String   @default("PDF")
+  fileSize     String   @default("1.2 MB")
+  downloadCount Int     @default(0)
+  downloadUrl  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Subscriber {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  isActive  Boolean  @default(true)
+  source    String   @default("footer_newsletter")
+  createdAt DateTime @default(now())
+}
+
+model ContactMessage {
+  id           String   @id @default(uuid())
+  fullName     String
+  email        String
+  phone        String?
+  inquiryType  String   @default("General Inquiry")
+  message      String   @db.Text
+  isRead       Boolean  @default(false)
+  isReplied    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+}

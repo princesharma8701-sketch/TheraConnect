@@ -1,0 +1,6 @@
+{
+  "name": "TheraConnect",
+  "description": "Online Therapy Booking & Clinical Management System with evidence-based mental healthcare, appointment scheduling, and clinical admin portal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
